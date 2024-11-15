@@ -245,7 +245,7 @@ def create_dataset(destination_folder, size, *inputs):
             continue
 
         # resize the images
-        resize_image(new_image_path, new_image_path, size)
+        # resize_image(new_image_path, new_image_path, size)
 
         # copy the captions
 
