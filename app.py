@@ -1025,7 +1025,33 @@ with gr.Blocks(elem_id="app", theme=theme, css=css, fill_width=True) as demo:
                             inputs=[directory_input, concept_sentence], 
                             outputs=output_components
                         )
+                    with gr.Group(visible=False) as captioning_area:
+                        #do_captioning = gr.Button("Add AI captions with Florence-2")
+                        output_components.append(captioning_area)
+                        #output_components = [captioning_area]
+                        caption_list = []
+                        for i in range(1, MAX_IMAGES + 1):
+                            locals()[f"captioning_row_{i}"] = gr.Row(visible=False)
+                            with locals()[f"captioning_row_{i}"]:
+                                locals()[f"image_{i}"] = gr.Image(
+                                    type="filepath",
+                                    width=111,
+                                    height=111,
+                                    min_width=111,
+                                    interactive=False,
+                                    scale=2,
+                                    show_label=False,
+                                    show_share_button=False,
+                                    show_download_button=False,
+                                )
+                                locals()[f"caption_{i}"] = gr.Textbox(
+                                    label=f"Caption {i}", scale=15, interactive=True
+                                )
 
+                            output_components.append(locals()[f"captioning_row_{i}"])
+                            output_components.append(locals()[f"image_{i}"])
+                            output_components.append(locals()[f"caption_{i}"])
+                            caption_list.append(locals()[f"caption_{i}"])
                 with gr.Column():
                     gr.Markdown(
                         """# Step 3. Train
