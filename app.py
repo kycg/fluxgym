@@ -1,4 +1,5 @@
 import os
+import glob
 import sys
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 os.environ['GRADIO_ANALYTICS_ENABLED'] = '0'
@@ -170,6 +171,58 @@ def upload_hf(base_model, lora_rows, repo_owner, repo_name, repo_visibility, hf_
     huggingface_util.upload(args=args, src=src)
     gr.Info(f"[Upload Complete] https://huggingface.co/{repo_id}", duration=None)
 
+def load_from_directory(directory_path, concept_sentence):
+    # 
+    if not os.path.isdir(directory_path):
+        raise gr.Error(f"Directory {directory_path} does not exist")
+
+    # 
+    all_files = sorted(os.listdir(directory_path))  # 
+    # Exclude directories
+    uploaded_images = [
+        os.path.join(directory_path, file) 
+        for file in all_files 
+        if os.path.isfile(os.path.join(directory_path, file)) and not file.endswith('.txt')
+    ]
+    txt_files = [
+        os.path.join(directory_path, file) 
+        for file in all_files 
+        if os.path.isfile(os.path.join(directory_path, file)) and file.endswith('.txt')
+    ]
+    txt_files_dict = {os.path.splitext(os.path.basename(txt_file))[0]: txt_file for txt_file in txt_files}
+
+    updates = []
+    if len(uploaded_images) <= 1:
+        raise gr.Error("Please have at least 2 images in the directory (4-30 is recommended)")
+    elif len(uploaded_images) > MAX_IMAGES:
+        raise gr.Error(f"For now, only {MAX_IMAGES} or fewer images are allowed for training")
+
+    updates.append(gr.update(visible=True))  # 
+
+    # 
+    for i in range(1, MAX_IMAGES + 1):
+        visible = i <= len(uploaded_images)
+        updates.append(gr.update(visible=visible))  # 
+
+        image_value = uploaded_images[i - 1] if visible else None
+        updates.append(gr.update(value=image_value, visible=visible))  # 
+
+        corresponding_caption = False
+        if image_value:
+            base_name = os.path.splitext(os.path.basename(image_value))[0]
+            if base_name in txt_files_dict:
+                with open(txt_files_dict[base_name], 'r') as file:
+                    corresponding_caption = file.read()
+
+        text_value = corresponding_caption if visible and corresponding_caption else concept_sentence if visible and concept_sentence else None
+        updates.append(gr.update(value=text_value, visible=visible))  # 
+
+    updates.append(gr.update(visible=True))  # 
+    updates.append(gr.update(visible=True))
+
+    return updates
+
+    
 def load_captioning(uploaded_files, concept_sentence):
     uploaded_images = [file for file in uploaded_files if not file.endswith('.txt')]
     txt_files = [file for file in uploaded_files if file.endswith('.txt')]
@@ -229,9 +282,31 @@ def resize_image(image_path, output_path, size):
         img_resized = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
         img_resized.save(output_path)
 
-def create_dataset(destination_folder, size, *inputs):
+
+def load_images_from_directory(directory_path):
+    # Validate the directory path
+    if not os.path.isdir(directory_path):
+        raise ValueError(f"Invalid directory path: {directory_path}")
+
+    # Supported image file extensions
+    image_extensions = ['*.png', '*.jpg', '*.jpeg', '*.bmp', '*.gif', '*.txt']
+
+    # Collect all image paths
+    images = []
+    for ext in image_extensions:
+        images.extend(glob.glob(os.path.join(directory_path, ext)))
+
+    if not images:
+        raise ValueError(f"No images found in directory: {directory_path}")
+
+    return images
+    
+def create_dataset(directory_input,destination_folder, size, *inputs):
     print("Creating dataset")
-    images = inputs[0]
+    #print(input)
+    #print(inputs[0])
+    #images = inputs[0]
+    images =load_images_from_directory (directory_input)
     if not os.path.exists(destination_folder):
         os.makedirs(destination_folder)
 
@@ -245,7 +320,7 @@ def create_dataset(destination_folder, size, *inputs):
             continue
 
         # resize the images
-        # resize_image(new_image_path, new_image_path, size)
+        resize_image(new_image_path, new_image_path, size)
 
         # copy the captions
 
@@ -923,54 +998,34 @@ with gr.Blocks(elem_id="app", theme=theme, css=css, fill_width=True) as demo:
                     print(f"model_names={model_names}")
                     base_model = gr.Dropdown(label="Base model (edit the models.yaml file to add more to this list)", choices=model_names, value=model_names[0])
                     vram = gr.Radio(["20G", "16G", "12G" ], value="20G", label="VRAM", interactive=True)
-                    num_repeats = gr.Number(value=10, precision=0, label="Repeat trains per image", interactive=True)
-                    max_train_epochs = gr.Number(label="Max Train Epochs", value=16, interactive=True)
+                    num_repeats = gr.Number(value=100, precision=0, label="Repeat trains per image", interactive=True)
+                    max_train_epochs = gr.Number(label="Max Train Epochs", value=1, interactive=True)
                     total_steps = gr.Number(0, interactive=False, label="Expected training steps")
                     sample_prompts = gr.Textbox("", lines=5, label="Sample Image Prompts (Separate with new lines)", interactive=True)
                     sample_every_n_steps = gr.Number(0, precision=0, label="Sample Image Every N Steps", interactive=True)
-                    resolution = gr.Number(value=512, precision=0, label="Resize dataset images")
+                    resolution = gr.Number(value=1024, precision=0, label="Resize dataset images")
                 with gr.Column():
                     gr.Markdown(
                         """# Step 2. Dataset
         <p style="margin-top:0">Make sure the captions include the trigger word.</p>
         """, elem_classes="group_padding")
                     with gr.Group():
-                        images = gr.File(
-                            file_types=["image", ".txt"],
-                            label="Upload your images",
-                            #info="If you want, you can also manually upload caption files that match the image names (example: img0.png => img0.txt)",
-                            file_count="multiple",
+                        
+                        directory_input = gr.Textbox(
+                            label="Dataset Directory",
+                            placeholder="Enter the path to your dataset folder",
+                            value="/workspace/storage/",  # Default directory path
                             interactive=True,
-                            visible=True,
-                            scale=1,
                         )
-                    with gr.Group(visible=False) as captioning_area:
-                        do_captioning = gr.Button("Add AI captions with Florence-2")
-                        output_components.append(captioning_area)
-                        #output_components = [captioning_area]
-                        caption_list = []
-                        for i in range(1, MAX_IMAGES + 1):
-                            locals()[f"captioning_row_{i}"] = gr.Row(visible=False)
-                            with locals()[f"captioning_row_{i}"]:
-                                locals()[f"image_{i}"] = gr.Image(
-                                    type="filepath",
-                                    width=111,
-                                    height=111,
-                                    min_width=111,
-                                    interactive=False,
-                                    scale=2,
-                                    show_label=False,
-                                    show_share_button=False,
-                                    show_download_button=False,
-                                )
-                                locals()[f"caption_{i}"] = gr.Textbox(
-                                    label=f"Caption {i}", scale=15, interactive=True
-                                )
+                        load_button = gr.Button("Load from Directory")
 
-                            output_components.append(locals()[f"captioning_row_{i}"])
-                            output_components.append(locals()[f"image_{i}"])
-                            output_components.append(locals()[f"caption_{i}"])
-                            caption_list.append(locals()[f"caption_{i}"])
+                        
+                        load_button.click(
+                            fn=load_from_directory, 
+                            inputs=[directory_input, concept_sentence], 
+                            outputs=output_components
+                        )
+
                 with gr.Column():
                     gr.Markdown(
                         """# Step 3. Train
@@ -1060,47 +1115,20 @@ with gr.Blocks(elem_id="app", theme=theme, css=css, fill_width=True) as demo:
     ]
     advanced_component_ids = [x.elem_id for x in advanced_components]
     original_advanced_component_values = [comp.value for comp in advanced_components]
-    images.upload(
-        load_captioning,
-        inputs=[images, concept_sentence],
-        outputs=output_components
-    )
-    images.delete(
-        load_captioning,
-        inputs=[images, concept_sentence],
-        outputs=output_components
-    )
-    images.clear(
-        hide_captioning,
-        outputs=[captioning_area, start]
-    )
+    
     max_train_epochs.change(
         fn=update_total_steps,
-        inputs=[max_train_epochs, num_repeats, images],
+        inputs=[max_train_epochs, num_repeats, directory_input],
         outputs=[total_steps]
     )
     num_repeats.change(
         fn=update_total_steps,
-        inputs=[max_train_epochs, num_repeats, images],
+        inputs=[max_train_epochs, num_repeats, directory_input],
         outputs=[total_steps]
     )
-    images.upload(
-        fn=update_total_steps,
-        inputs=[max_train_epochs, num_repeats, images],
-        outputs=[total_steps]
-    )
-    images.delete(
-        fn=update_total_steps,
-        inputs=[max_train_epochs, num_repeats, images],
-        outputs=[total_steps]
-    )
-    images.clear(
-        fn=update_total_steps,
-        inputs=[max_train_epochs, num_repeats, images],
-        outputs=[total_steps]
-    )
+    
     concept_sentence.change(fn=update_sample, inputs=[concept_sentence], outputs=sample_prompts)
-    start.click(fn=create_dataset, inputs=[dataset_folder, resolution, images] + caption_list, outputs=dataset_folder).then(
+    start.click(fn=create_dataset, inputs=[directory_input,dataset_folder, resolution, directory_input] + caption_list, outputs=dataset_folder).then(
         fn=start_training,
         inputs=[
             base_model,
@@ -1111,7 +1139,7 @@ with gr.Blocks(elem_id="app", theme=theme, css=css, fill_width=True) as demo:
         ],
         outputs=terminal,
     )
-    do_captioning.click(fn=run_captioning, inputs=[images, concept_sentence] + caption_list, outputs=caption_list)
+    do_captioning.click(fn=run_captioning, inputs=[directory_input, concept_sentence] + caption_list, outputs=caption_list)
     demo.load(fn=loaded, js=js, outputs=[hf_token, hf_login, hf_logout, repo_owner])
     refresh.click(update, inputs=listeners, outputs=[train_script, train_config, dataset_folder])
 if __name__ == "__main__":
