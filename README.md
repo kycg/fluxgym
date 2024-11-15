@@ -1,3 +1,26 @@
+## File Upload Process Adjustment and Workflow Guidelines
+
+## Purpose:
+To outline the updated process for handling file uploads and related tasks, ensuring efficiency, precision, and quality in operations.
+Overview of Changes
+
+    File Upload Method:
+    Transition from direct file uploads to using a designated directory for file synchronization.
+
+    Local Processing:
+        All JPG and TXT caption files must be prepared locally on the user's machine prior to upload.
+        This ensures that files are fully ready and meet the required standards before synchronization.
+
+    Synchronization Software:
+        Use synchronization software to upload processed files to the server.
+        This method provides improved file management and minimizes upload-related errors.
+
+    Thumbnail Processing:
+        Utilize higher-precision software for thumbnail generation.
+        The upgraded software ensures better preservation of details and improved thumbnail quality.
+
+
+
 # Flux Gym
 
 Dead simple web UI for training FLUX LoRA **with LOW VRAM (12GB/16GB/20GB) support.**
